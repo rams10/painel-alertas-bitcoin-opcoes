@@ -46,7 +46,7 @@ details{margin:8px 0}.gt{overflow-x:auto;white-space:pre;font:12px/1.45 ui-monos
 </div>
 
 <h2>Bitcoin</h2><div id="btc"></div>
-<h2>Opções em ações</h2><p class="mut">“Perto do sinal” aparece quando o %K está a até 5 pontos (escala de 0 a 100) de cruzar o %D, dentro da zona do guia e já caminhando para o cruzamento. Na put, o filtro da SMA 50 também precisa estar atendido.</p><div class="box tw" id="acoes"></div>
+<h2>Opções em ações</h2><p class="mut">“Perto do sinal” aparece quando o %K está a até 5 pontos do %D, dentro da zona do guia e caminhando para o cruzamento. “Quase sinal” mostra uma faixa estimada de fechamento do próximo candle que poderia confirmar o cruzamento, desde que permaneça na zona do guia. Na put, o filtro da SMA 50 também precisa estar atendido. A projeção é aproximada e não substitui a confirmação no fechamento.</p><div class="box tw" id="acoes"></div>
 
 <h2>Swing trade</h2>
 <div class="box"><p>Capital do swing (10% da carteira de ações): R$ <input id="cap" type="number" step="500" value="12000"> em 4 posições. Filtro: fechamento acima da média de 20 semanas. Entrada: EMA 9 cruza a SMA 50 para cima. Compra na abertura seguinte. “Perto do cruzamento” aparece com o filtro ligado e a EMA 9 a menos de 2,5% da SMA 50. “Quase sinal” aparece quando o cruzamento pode ocorrer já amanhã, com o preço de fechamento necessário.</p><div class="tw" id="swing"></div></div>
@@ -115,18 +115,36 @@ const dd=x=>Math.round((x-from)/864e5);let ok=out.filter(x=>dd(x)>=lo&&dd(x)<=45
 function chart(K,D,lo,hi,n=50){n=Math.min(n,K.length);const a=K.slice(-n),b=D.slice(-n),W=240,H=100,x=i=>4+i*(W-8)/(n-1),y=v=>H-6-(v/100)*(H-12);
 const pl=r=>r.map((v,i)=>isNaN(v)?'':((i&&!isNaN(r[i-1]))?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join('');
 return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:260px;display:block" role="img" aria-label="Linhas %K e %D do Stochastic RSI"><rect x="4" y="${y(100)}" width="${W-8}" height="${y(hi)-y(100)}" fill="var(--bd)" opacity=".5"/><rect x="4" y="${y(lo)}" width="${W-8}" height="${y(0)-y(lo)}" fill="var(--bd)" opacity=".5"/><path d="M4 ${y(hi)}H${W-4}M4 ${y(lo)}H${W-4}" stroke="var(--mut)" stroke-width=".6" stroke-dasharray="3 3" fill="none"/><text x="${W-4}" y="${y(hi)-2}" font-size="8" fill="var(--mut)" text-anchor="end">${hi}</text><text x="${W-4}" y="${y(lo)+9}" font-size="8" fill="var(--mut)" text-anchor="end">${lo}</text><path d="${pl(b)}" stroke="var(--wn)" stroke-width="1.5" fill="none"/><path d="${pl(a)}" stroke="var(--ok)" stroke-width="1.8" fill="none"/></svg><span class="mut"><b style="color:var(--ok)">%K</b> ${f2(a[a.length-1])} · <b style="color:var(--wn)">%D</b> ${f2(b[b.length-1])}</span><br>`}
+function projectedRange(closes,side,limit){
+const z=stoch(closes),n=closes.length-1,k=z.K[n],d=z.D[n],prev=z.K[n-1];
+if(!Number.isFinite(k)||!Number.isFinite(d)||!Number.isFinite(prev))return null;
+if(side==='put'?!(k<limit&&k<=d&&k>prev):!(k>limit&&k>=d&&k<prev))return null;
+const cross=(z.K[n-1]+z.K[n])/2;
+const lowK=side==='put'?cross+0.25:limit+0.25,highK=side==='put'?limit-0.25:cross-0.25;
+if(!(lowK<highK))return null;
+const nextK=p=>{const a=stoch(closes.concat(p)).K;return a[a.length-1]};
+const priceFor=target=>{
+let lo=closes[n]*0.5,hi=closes[n]*1.5,kl=nextK(lo),kh=nextK(hi);
+if(!Number.isFinite(kl)||!Number.isFinite(kh)||kl>target||kh<target)return null;
+for(let j=0;j<48;j++){const mid=(lo+hi)/2;if(nextK(mid)<target)lo=mid;else hi=mid}
+return (lo+hi)/2};
+const a=priceFor(lowK),b=priceFor(highK);if(a===null||b===null)return null;
+const lo=Math.min(a,b),hi=Math.max(a,b),base=closes[n],dist=base<lo?lo/base-1:base>hi?base/hi-1:0;
+return dist<=0.025?[lo,hi]:null}
 function stock(c){const[t,tf,pt,pf,pd,ct,cd,lo,gr,val]=[c[0],c[1],c[2],c[3],c[4],c[5],c[6],c[7],c[8],c[9]];const rows=S[t];if(!rows||rows.length<120)return `<tr><td><b>${t}</b><br><span class="mut">${gr}</span></td><td colspan="5" class="mut">Envie o CSV de ${t} (mínimo ~120 pregões).</td></tr>`;
 const dc=rows.map(r=>r[4]),s50=sma(dc,50),idx=new Map(rows.map((r,i)=>[r[0],i]));const bs=bars(rows,tf,false),{K,D}=stoch(bs.map(b=>b.c));
 let lp=null,lc=null;for(let i=2;i<bs.length;i++){if(isNaN(K[i])||isNaN(D[i-1]))continue;
 if(K[i]<pt&&K[i]>D[i]&&K[i-1]<=D[i-1]&&(!pf||dc[idx.get(bs[i].d)]>s50[idx.get(bs[i].d)]))lp=i;
 if(K[i]>ct&&K[i]<D[i]&&K[i-1]>=D[i-1])lc=i}
 const last=bs.length-1,px=dc[dc.length-1],from=new Date(Date.parse(rows[rows.length-1][0])+864e5),kk=K[last],dd=D[last],ix=idx.get(bs[last].d),
-wp=kk<pt&&kk<dd&&dd-kk<=5&&kk>K[last-1]&&(!pf||dc[ix]>s50[ix]),wc=kk>ct&&kk>dd&&kk-dd<=5&&kk<K[last-1],
-wn=(g,lbl,mv)=>`<br>${tg('perto do sinal','wn')}<br><span class="mut">%K está ${f2(g)} pontos ${lbl} do %D e ${mv}. Cruzar confirma o sinal.</span>`;
+putFilter=!pf||dc[ix]>s50[ix],prePut=putFilter?projectedRange(bs.map(b=>b.c),'put',pt):null,preCall=projectedRange(bs.map(b=>b.c),'call',ct),
+wp=kk<pt&&kk<dd&&dd-kk<=5&&kk>K[last-1]&&putFilter,wc=kk>ct&&kk>dd&&kk-dd<=5&&kk<K[last-1],
+wn=(g,lbl,mv)=>`<br>${tg('perto do sinal','wn')}<br><span class="mut">%K está ${f2(g)} pontos ${lbl} do %D e ${mv}. Cruzar confirma o sinal.</span>`,
+qa=(r)=>r?`<br>${tg('quase sinal','wn')}<br><span class="mut">Próximo candle (${tf}): fechamento estimado entre R$ ${f2(r[0],2)} e R$ ${f2(r[1],2)} pode confirmar o cruzamento.</span>`:'';
 const cell=(i,side,dist)=>{if(i===null)return '<span class="mut">sem sinal no histórico</span>';if(i!=last)return `<span class="mut">último: ${fd(bs[i].d)}</span>`;
 const a=side=='put'?px*(1-dist[1]/100):px*(1+dist[0]/100),b=side=='put'?px*(1-dist[0]/100):px*(1+dist[1]/100);
 return tg('sinal ativo',side=='put'?'ok':'wn')+`<br>Strike entre R$ ${f2(a,2)} e R$ ${f2(b,2)}<br>Venc. ${expiry(from,lo)}`};
-return `<tr><td><b>${t}</b><br><span class="mut">${gr}</span></td><td class="n">R$ ${f2(px,2)}<br><span class="mut">${fd(rows[rows.length-1][0])}</span><br><span class="mut">%K ${f2(K[last])} · %D ${f2(D[last])} (${tf})</span></td><td>${chart(K,D,pt,ct)}<span class="mut">últimas 50 barras (${tf})</span></td><td>Put<br>${cell(lp,'put',pd)}${wp?wn(dd-kk,'abaixo','subindo'):''}</td><td>Call<br>${cell(lc,'call',cd)}${wc?wn(kk-dd,'acima','caindo'):''}</td></tr>`}
+return `<tr><td><b>${t}</b><br><span class="mut">${gr}</span></td><td class="n">R$ ${f2(px,2)}<br><span class="mut">${fd(rows[rows.length-1][0])}</span><br><span class="mut">%K ${f2(K[last])} · %D ${f2(D[last])} (${tf})</span></td><td>${chart(K,D,pt,ct)}<span class="mut">últimas 50 barras (${tf})</span></td><td>Put<br>${cell(lp,'put',pd)}${wp?wn(dd-kk,'abaixo','subindo'):''}${qa(prePut)}</td><td>Call<br>${cell(lc,'call',cd)}${wc?wn(kk-dd,'acima','caindo'):''}${qa(preCall)}</td></tr>`}
 function btc(){const rows=S.BTC;if(!rows||rows.length<300)return '<div class="box">Envie o CSV do Bitcoin (BTC…), com pelo menos 300 dias.</div>';
 const w=bars(rows,'1S',true),c=w.map(b=>b.c),{r,K,D}=stoch(c),m=sma(c,14);let st='LFTB11',since=null,ev=[];
 for(let i=15;i<w.length;i++){if(isNaN(K[i])||isNaN(D[i-1])||isNaN(m[i]))continue;

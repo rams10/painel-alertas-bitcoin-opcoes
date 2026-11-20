@@ -52,30 +52,49 @@ def load_data() -> dict[str, Any]:
     return existing
 
 
+class RateLimitError(RuntimeError):
+    """A API recusou novas chamadas por limite de frequência ou cota diária."""
+
+
 def fetch_json(params: dict[str, str]) -> dict[str, Any]:
     query = urlencode(params)
     request = Request(
         f"{API_URL}?{query}",
         headers={"User-Agent": "painel-alertas-bitcoin-opcoes/1.0"},
     )
+    api_key = params.get("apikey", "")
     # Não imprimir a URL ou a exceção bruta: ambas podem conter a chave da API.
     try:
         with urlopen(request, timeout=35) as response:
             payload = json.loads(response.read().decode("utf-8"))
-    except Exception as exc:  # erro de rede/HTTP/JSON, sem vazar URL ou chave
+    except Exception as exc:
         raise RuntimeError(f"Falha de rede ou resposta inválida ({type(exc).__name__}).") from None
     if not isinstance(payload, dict):
         raise RuntimeError("Resposta inesperada da API.")
-    for key in ("Error Message", "Note", "Information"):
-        if key in payload:
-            message = str(payload[key]).lower()
-            if "rate" in message or "call frequency" in message or "requests per day" in message:
-                raise RuntimeError("Limite de consultas da Alpha Vantage atingido; dados anteriores preservados.")
-            if key == "Error Message":
-                raise RuntimeError("A API rejeitou a consulta; verifique o símbolo e a disponibilidade do ativo.")
-            raise RuntimeError("A API não entregou a série solicitada; dados anteriores preservados.")
-    return payload
 
+    for key in ("Error Message", "Note", "Information"):
+        if key not in payload:
+            continue
+        raw = str(payload[key])
+        safe = raw.replace(api_key, "[CHAVE OCULTA]") if api_key else raw
+        low = safe.lower()
+
+        if any(term in low for term in (
+            "rate limit", "call frequency", "requests per day",
+            "calls per day", "calls per minute", "quota exceeded",
+            "standard api call frequency",
+        )):
+            raise RateLimitError(f"Limite/cota da Alpha Vantage: {safe[:260]}")
+
+        if "api key" in low and any(term in low for term in ("invalid", "missing", "incorrect")):
+            raise RuntimeError(f"Chave da Alpha Vantage recusada: {safe[:260]}")
+
+        if key == "Error Message":
+            raise RuntimeError(f"Consulta rejeitada pela Alpha Vantage: {safe[:260]}")
+
+        raise RuntimeError(f"Resposta sem série da Alpha Vantage ({key}): {safe[:260]}")
+
+    return payload
 
 def as_float(row: dict[str, Any], candidates: tuple[str, ...]) -> float:
     for key in candidates:
@@ -195,6 +214,30 @@ def main() -> int:
             }
             successes += 1
             print(f"OK {symbol}: {len(rows)} candles consultados; {changed} datas novas ou revisadas; último candle {merged[-1][0]}.")
+        except RateLimitError as exc:
+            previous = statuses.get(symbol, {})
+            statuses[symbol] = {
+                **previous,
+                "status": "error",
+                "last_attempt": utc_now(),
+                "latest_date": assets.get(symbol, [])[-1][0] if assets.get(symbol) else previous.get("latest_date"),
+                "message": str(exc),
+            }
+            failures += 1
+            print(f"FALHA {symbol}: {exc}")
+            # Não desperdiçar chamadas repetindo a mesma resposta de limite.
+            for pending in symbols[index + 1:]:
+                prior = statuses.get(pending, {})
+                statuses[pending] = {
+                    **prior,
+                    "status": "error",
+                    "last_attempt": utc_now(),
+                    "latest_date": assets.get(pending, [])[-1][0] if assets.get(pending) else prior.get("latest_date"),
+                    "message": "Consulta suspensa porque a Alpha Vantage sinalizou limite de uso.",
+                }
+                failures += 1
+                print(f"IGNORADO {pending}: limite sinalizado; tentativa interrompida para preservar a cota.")
+            break
         except RuntimeError as exc:
             previous = statuses.get(symbol, {})
             statuses[symbol] = {
@@ -206,8 +249,7 @@ def main() -> int:
             }
             failures += 1
             print(f"FALHA {symbol}: {exc}")
-        # A franquia gratuita é limitada por dia e também por frequência.
-        # 13 segundos entre chamadas mantém o ritmo abaixo de 5 consultas/minuto.
+        # O intervalo mantém o ritmo abaixo de 5 consultas por minuto.
         if index < len(symbols) - 1:
             time.sleep(13)
 

@@ -259,8 +259,9 @@ def main() -> int:
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"Resumo: {successes} sucesso(s), {failures} falha(s), {len(symbols)} consulta(s).")
-    # Erros parciais não apagam nem bloqueiam a publicação dos ativos bem-sucedidos.
-    return 0 if successes else 1
+    # O arquivo de status foi salvo mesmo quando o provedor recusou chamadas.
+    # O workflow deve publicar esse diagnóstico e manter os históricos existentes.
+    return 0
 
 
 if __name__ == "__main__":

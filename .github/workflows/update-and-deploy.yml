@@ -85,7 +85,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Configurar GitHub Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@v5
 
       - name: Preparar arquivos do site
         run: |
@@ -94,10 +94,10 @@ jobs:
           cp data/market-data.json _site/data/market-data.json
 
       - name: Enviar artefato do site
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@v4
         with:
           path: _site
 
       - name: Publicar no GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@v4

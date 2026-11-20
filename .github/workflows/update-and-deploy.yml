@@ -1,0 +1,103 @@
+name: Atualizar cotações e publicar painel
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Bitcoin: 21h15 em Brasília (00h15 UTC do dia seguinte).
+    - cron: "15 0 * * *"
+    # Ações B3: 21h40 em Brasília, de segunda a sexta (terça a sábado em UTC).
+    - cron: "40 0 * * 2-6"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Quais cotações consultar
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - stocks
+          - btc
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: painel-alertas-bitcoin-opcoes
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v7
+
+      - name: Preparar Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Definir o grupo de ativos
+        id: scope
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "value=${{ inputs.scope }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event.schedule }}" == "15 0 * * *" ]]; then
+            echo "value=btc" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=stocks" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Consultar Alpha Vantage e mesclar candles
+        env:
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+          SCOPE: ${{ steps.scope.outputs.value }}
+        run: python scripts/update_market_data.py --scope "$SCOPE"
+
+      - name: Salvar cotações no repositório
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/market-data.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Atualiza cotações do painel"
+            git push
+          else
+            echo "Nenhuma alteração nos dados para publicar."
+          fi
+
+  deploy:
+    needs: update
+    if: always() && (needs.update.result == 'success' || needs.update.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v7
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Preparar arquivos do site
+        run: |
+          mkdir -p _site/data
+          cp index.html _site/index.html
+          cp data/market-data.json _site/data/market-data.json
+
+      - name: Enviar artefato do site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

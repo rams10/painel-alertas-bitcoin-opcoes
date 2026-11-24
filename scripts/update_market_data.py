@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Atualiza o cache diário de OHLC via Alpha Vantage, sem expor a chave no site."""
+"""Atualiza exclusivamente a base diária de Bitcoin e ações usadas no programa de opções."""
 from __future__ import annotations
 
 import argparse
@@ -19,11 +19,7 @@ DATA_FILE = ROOT / "data" / "market-data.json"
 API_URL = "https://www.alphavantage.co/query"
 
 # Os tickers do painel são consultados no formato brasileiro .SA (não .SAO).
-STOCKS = [
-    "SBSP3", "BBSE3", "ISAE4", "EGIE3", "PETR4", "VALE3", "BBAS3",
-    "BBDC4", "ITUB4", "ITSA4", "AXIA3", "WEGE3", "SUZB3", "B3SA3",
-    "PRIO3", "BPAC11", "GGBR4",
-]
+STOCKS = ["SBSP3","BBSE3","ISAE4","EGIE3","PETR4","VALE3","BBAS3","BBDC4","ITUB4","ITSA4","AXIA3"]
 
 EMPTY_DATA: dict[str, Any] = {
     "source": "Alpha Vantage",

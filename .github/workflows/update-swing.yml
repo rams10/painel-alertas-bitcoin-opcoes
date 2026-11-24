@@ -1,27 +1,21 @@
-name: Atualizar swing trade e publicar painel
+name: Atualizar swing trade
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "scripts/update_swing_market_data.py"
-      - "swing/**"
-      - ".github/workflows/update-swing.yml"
   schedule:
+    # Swing trade: 22h00 no horário de Recife, dias úteis.
     - cron: "0 22 * * 1-5"
       timezone: "America/Recife"
   workflow_dispatch:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
-  actions: read
+
+concurrency:
+  group: swing-trade-data
+  cancel-in-progress: false
 
 jobs:
   update:
-    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Baixar o repositório
@@ -52,40 +46,3 @@ jobs:
           else
             echo "Nenhuma alteração nos dados do swing trade."
           fi
-
-  deploy:
-    needs: update
-    if: always() && (needs.update.result == 'success' || needs.update.result == 'skipped')
-    concurrency:
-      group: github-pages-deployment
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Baixar o repositório atualizado
-        uses: actions/checkout@v7
-        with:
-          ref: main
-
-      - name: Configurar GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Preparar os dois aplicativos
-        run: |
-          mkdir -p _site/data _site/swing
-          cp index.html _site/index.html
-          cp data/market-data.json _site/data/market-data.json
-          cp -R swing/. _site/swing/
-
-      - name: Enviar artefato do site
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: _site/
-
-      - name: Publicar no GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4

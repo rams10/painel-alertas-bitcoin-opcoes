@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<title>Painel de Swing Trade</title>
+<style>
+:root{--bg:#0b1220;--fg:#eef4ff;--mut:#9aabc2;--card:#121d30;--bd:#293a54;--ok:#39d49a;--wn:#f2bd58;--dn:#ff7b86;--okb:#143f32;--wnb:#45361a;--dnb:#43201d;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1100px;margin:auto;padding:24px 16px 48px}h1{font-size:clamp(26px,5vw,36px);line-height:1.2;margin:0 0 7px}h2{font-size:20px;margin:28px 0 10px}
+p{margin:7px 0}.mut{color:var(--mut);font-size:13px}.box{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-top:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+input,select,button{font:inherit;color:var(--fg);background:#0d1728;border:1px solid var(--bd);border-radius:7px;padding:8px}
+input[type=number]{width:120px}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;background:var(--bd)}.ok{background:var(--okb);color:var(--ok)}.wn{background:var(--wnb);color:var(--wn)}.dn{background:var(--dnb);color:var(--dn)}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:800px}th,td{text-align:left;padding:10px 9px;border-bottom:1px solid var(--bd);vertical-align:top;font-size:13px}th{color:var(--mut);font-weight:650}td.n{text-align:right;font-variant-numeric:tabular-nums}
+.status{font-size:13px;color:var(--mut);overflow-wrap:anywhere}.foot{margin-top:20px;font-size:12px;color:var(--mut);line-height:1.6}
+@media(max-width:650px){main{padding:20px 12px 36px}.box{padding:13px}}
+</style>
+</head>
+<body>
+<main>
+<h1>Painel de Swing Trade</h1>
+<p class="mut">Programa independente para acompanhar os sinais de entrada, filtros semanais, médias, ATR e posições abertas. As regras permanecem próprias deste painel.</p>
+<div class="box">
+ <b>Dados de mercado</b>
+ <p class="mut">Atualização automática nos dias úteis após o fechamento da B3. Também é possível importar CSV do Investing.com; use o ticker no início do nome do arquivo (por exemplo, PETR4_...).</p>
+ <div class="row"><input id="f" type="file" accept=".csv" multiple><button id="clr">Restaurar histórico base</button><button id="upd">Recarregar cotações publicadas</button></div>
+ <p id="chips" class="status">Carregando histórico inicial…</p>
+ <p id="auto" class="status">Consultando dados publicados…</p>
+</div>
+<h2>Sinais de swing trade</h2>
+<div class="box">
+ <p class="mut">Filtro: fechamento acima da média de 20 semanas. Entrada: EMA 9 cruza a SMA 50 para cima. Compra na abertura seguinte. “Perto do cruzamento” aparece com o filtro ligado e a EMA 9 a menos de 2,5% da SMA 50.</p>
+ <p class="mut">O stop inicial usa 3 ATR(14) abaixo da entrada. Os sinais são calculados sobre candles diários e semanais.</p>
+ <div class="row">Capital alocado ao swing: R$ <input id="cap" type="number" step="500" value="12000"> em quatro posições, com risco máximo estimado de 2% por operação.</div>
+ <div class="tw" id="swing"></div>
+</div>
+<h2>Posições abertas</h2>
+<div class="box">
+ <p class="mut">Registre a compra para acompanhar o stop, os critérios de saída e o tempo da operação. Os registros de posições ficam apenas neste navegador.</p>
+ <div class="row">
+  <select id="st"></select><input id="sd" type="date" aria-label="Data da compra">
+  <input id="sp" type="number" step="0.01" placeholder="Preço" aria-label="Preço de compra">
+  <input id="sq" type="number" step="1" placeholder="Qtd." aria-label="Quantidade">
+  <button id="sa">Adicionar posição</button>
+ </div>
+ <div class="tw" id="pos"></div>
+</div>
+<h2>Checklist após cada fechamento</h2>
+<div class="box">
+ <ul>
+  <li>O stop foi acionado?</li><li>A EMA 9 fechou abaixo da SMA 50?</li><li>Fechou abaixo da linha semanal?</li>
+  <li>É o 10º pregão com fechamento abaixo da compra?</li><li>Chegou a 20 pregões?</li>
+  <li>Qualquer “sim”: vender na abertura seguinte e cancelar a ordem stop.</li>
+  <li>Deixe sempre a ordem stop ativa na corretora. O stop não protege de abertura abaixo dele (gap).</li>
+  <li>Não altere parâmetros nos primeiros 30 trades.</li>
+ </ul>
+</div>
+<p class="foot">Fonte de cotações: Alpha Vantage, candles diários. Cotações atrasadas ou incompletas podem afetar indicadores. Verifique liquidez, custos, eventos corporativos e preço executável antes de operar. Material de apoio, não recomendação de investimento.</p>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const num=x=>parseFloat(x.replace(/\./g,'').replace(',','.'));
+function parse(t){const o=[];for(const ln of t.split(/\r?\n/).slice(1)){const f=ln.replace(/^\uFEFF/,'').split('","').map(x=>x.replace(/"/g,''));if(f.length<5)continue;const m=f[0].match(/^(\d\d)\.(\d\d)\.(\d{4})$/);if(!m)continue;o.push([`${m[3]}-${m[2]}-${m[1]}`,num(f[2]),num(f[3]),num(f[4]),num(f[1])])}return o}
+const sma=(a,p)=>a.map((_,i)=>{if(i<p-1)return NaN;let s=0;for(let j=i-p+1;j<=i;j++)s+=a[j];return s/p});
+const ema=(a,n)=>{const k=2/(n+1);const o=[a[0]];for(let i=1;i<a.length;i++)o.push(a[i]*k+o[i-1]*(1-k));return o};
+const dow=d=>new Date(d+'T00:00:00Z').getUTCDay();
+const fd=d=>d.split('-').reverse().join('/');
+const f2=(x,p=1)=>isNaN(x)?'–':x.toLocaleString('pt-BR',{minimumFractionDigits:p,maximumFractionDigits:p});
+const tg=(t,c='')=>`<span class="tag ${c}">${t}</span>`;
+let S={},SEED={},SD={};
+const CSV_KEY='swingTrade.csv.v1';
+const save=()=>{try{const o={};for(const k in S)o[k]=S[k].filter(r=>!(SD[k]&&SD[k].has(r[0])));localStorage.setItem(CSV_KEY,JSON.stringify(o))}catch(e){}};
+const SW=['WEGE3','SUZB3','ITUB4','B3SA3','AXIA3','VALE3','PRIO3','BPAC11','PETR4','GGBR4','BBAS3'],ALL=[...new Set([...CFG.map(c=>c[0]),...SW])];
+let POS=[];try{POS=JSON.parse(localStorage.getItem('swingTrade.positions.v1')||'[]')}catch(e){}
+const savePos=()=>{try{localStorage.setItem('swingTrade.positions.v1',JSON.stringify(POS))}catch(e){}};
+function swind(rows){const n=rows.length,c=rows.map(r=>r[4]),h=rows.map(r=>r[2]),l=rows.map(r=>r[3]),atr=[];
+for(let i=0;i<n;i++){const tr=i?Math.max(h[i]-l[i],Math.abs(h[i]-c[i-1]),Math.abs(l[i]-c[i-1])):h[i]-l[i];atr.push(i?(atr[i-1]*13+tr)/14:tr)}
+const key=d=>{const w=dow(d);return new Date(Date.parse(d)+(w==0?5:5-w)*864e5).toISOString().slice(0,10)},ks=[],wc=[];
+rows.forEach(r=>{const k=key(r[0]);if(ks[ks.length-1]!==k){ks.push(k);wc.push(r[4])}else wc[wc.length-1]=r[4]});
+const w20=sma(wc,20),pos=new Map(ks.map((k,j)=>[k,j]));
+return{c,h,l,atr,wl:w20[w20.length-1],e9:ema(c,9),s50:sma(c,50),wb:rows.map(r=>{const j=pos.get(key(r[0]));return j>0?w20[j-1]:NaN})}}
+function posrow(p,i){const rows=S[p.t],btn=`<td><button data-r="${i}">Remover</button></td>`;const i0=rows?rows.findIndex(r=>r[0]>=p.d):-1;
+if(i0<0)return `<tr><td><b>${p.t}</b></td><td colspan="5" class="mut">Aguardando dados a partir de ${fd(p.d)}.</td>${btn}</tr>`;
+const x=swind(rows),n=rows.length-1,stop=p.p-3*x.atr[Math.max(i0-1,0)];let why='',day='';
+for(let i=i0;i<=n&&!why;i++){const k=i-i0+1;
+if(x.l[i]<=stop)why='stop atingido';else if(x.e9[i]<x.s50[i])why='EMA9 abaixo da SMA50';else if(x.c[i]<x.wb[i])why='fechou abaixo da linha semanal';else if(k==10&&x.c[i]<p.p)why='10º pregão abaixo da compra';else if(k>=21)why='prazo máximo';
+if(why)day=rows[i][0]}
+let ts=stop,hi=0;for(let a=i0;a<=n;a++){hi=Math.max(hi,x.h[a]);if(a>i0&&a<=n-2&&x.l[a]<x.l[a-1]&&x.l[a]<x.l[a-2]&&x.l[a]<x.l[a+1]&&x.l[a]<x.l[a+2]&&x.l[a]>ts&&x.l[a]<x.c[n])ts=x.l[a]}
+if(hi>=p.p+(p.p-stop)&&ts<p.p)ts=p.p;
+const e=x.e9[n],s5=x.s50[n],cc=x.c[n],wbN=dow(rows[n][0])==5?x.wl:x.wb[n],nd=(s5-0.8*e-x.c[n-49]/50)/0.18,kk=n-i0+1,al=[];
+if(e>s5&&e/s5-1<=0.025)al.push(`EMA9 a ${f2((e/s5-1)*100)}% da SMA50: sai se fechar abaixo de R$ ${f2(nd,2)} (${f2((nd/cc-1)*100)}%)`);
+if(cc/wbN-1<=0.025)al.push(`preço ${f2((cc/wbN-1)*100)}% acima da linha semanal (R$ ${f2(wbN,2)})`);
+if(kk==9)al.push(`amanhã é o 10º pregão: sai se fechar abaixo de R$ ${f2(p.p,2)}`);if(kk==20)al.push('amanhã é o prazo máximo (21º pregão)');
+const pl=(x.c[n]/p.p-1)*100,lab=why=='stop atingido'?`stop atingido em ${fd(day)}`:`vender na abertura após ${fd(day)}: ${why}`;
+return `<tr><td><b>${p.t}</b><br><span class="mut">${p.q} ações</span></td><td>${fd(p.d)}<br><span class="mut">R$ ${f2(p.p,2)}</span></td><td>R$ ${f2(stop,2)}${ts>stop?`<br><span class="mut">referência subindo: R$ ${f2(ts,2)}</span>`:''}</td><td>${n-i0+1}º pregão</td><td class="n">${f2(pl)}%</td><td>${why?tg(lab,'dn'):tg('manter','ok')+(al.length?'<br>'+tg('atenção','wn')+'<br>'+al.join('<br>'):'')}</td>${btn}</tr>`}
+function swing(){const cap=+$('#cap').value||12000;
+const R=SW.map(t=>{const rows=S[t];if(!rows||rows.length<130)return `<tr><td><b>${t}</b></td><td colspan="4" class="mut">Sem dados suficientes (envie o CSV).</td></tr>`;
+const x=swind(rows),n=rows.length-1,c=x.c[n],fl=c>x.wb[n],up=x.e9[n]>x.s50[n],sig=fl&&up&&x.e9[n-1]<=x.s50[n-1];let last='';
+for(let i=n;i>1;i--){if(x.c[i]>x.wb[i]&&x.e9[i]>x.s50[i]&&x.e9[i-1]<=x.s50[i-1]){last=rows[i][0];break}}
+const a=x.atr[n],q1=Math.floor(cap/4/c),q2=Math.floor(0.02*cap/(3*a)),gs=[];for(let i=Math.max(1,n-249);i<=n;i++)gs.push(Math.abs(rows[i][1]/x.c[i-1]-1));gs.sort((u,v)=>u-v);
+const g=gs[Math.floor(gs.length*0.75)]||0,f10=Math.min(...x.l.slice(n-9,n+1)),pct=(v,b)=>f2((v/b-1)*100),wbN=dow(rows[n][0])==5?x.wl:x.wb[n],need=Math.max((x.s50[n]-0.8*x.e9[n]-x.c[n-49]/50)/0.18,wbN);let cs;
+if(sig)cs=tg('compra na abertura de amanhã','ok')+`<br>Entrada provável: R$ ${f2(c,2)} (faixa R$ ${f2(c*(1-g),2)} a ${f2(c*(1+g),2)})<br>Stop 3 ATR: R$ ${f2(c-3*a,2)} (${pct(c-3*a,c)}%)${f10<c?`<br>Stop no fundo de 10 dias: R$ ${f2(f10,2)} (${pct(f10,c)}%)`:''}<br>Qtd.: ${Math.min(q1,q2)} (limite de 2% de risco; R$ ${f2(cap/4,0)} = ${q1})`;
+else if(!up&&need<=c*1.03)cs=tg('quase sinal','wn')+`<br>Cruza amanhã se fechar acima de R$ ${f2(need,2)} (${pct(need,c)}%)<br>Se ocorrer: entrada ≈ R$ ${f2(need,2)}, stop 3 ATR ≈ R$ ${f2(need-3*a,2)}`+(last?`<br><span class="mut">último sinal: ${fd(last)}</span>`:'');
+else if(!up&&fl&&x.s50[n]/x.e9[n]-1<=0.025)cs=tg('perto do cruzamento','wn')+`<br>EMA9 está ${f2((x.s50[n]/x.e9[n]-1)*100)}% abaixo da SMA50<br>Para cruzar amanhã: fechar acima de R$ ${f2(need,2)} (${pct(need,c)}%)`+(last?`<br><span class="mut">último sinal: ${fd(last)}</span>`:'');
+else cs=`<span class="mut">sem sinal${last?' · último: '+fd(last):''}</span>`+(!up?`<br><span class="mut">EMA9 está ${f2((x.s50[n]/x.e9[n]-1)*100)}% abaixo da SMA50</span>`:(x.e9[n]/x.s50[n]-1<=0.025?`<br>`+tg('atenção à saída','dn')+`<br><span class="mut">EMA9 está ${f2((x.e9[n]/x.s50[n]-1)*100)}% acima da SMA50. Se perder, é saída do guia (se estiver comprado).</span>`:''));
+return `<tr><td><b>${t}</b><br><span class="mut">R$ ${f2(c,2)} · ${fd(rows[n][0])}</span></td><td>${tg(fl?'ligado':'desligado',fl?'ok':'')}<br><span class="mut">linha semanal R$ ${f2(x.wb[n],2)}</span></td><td>${tg(up?'EMA9 acima':'EMA9 abaixo',up?'ok':'')}<br><span class="mut">${f2(x.e9[n],2)} / ${f2(x.s50[n],2)}</span></td><td class="n">R$ ${f2(a,2)}<br><span class="mut">${f2(a/c*100)}% do preço</span></td><td>${cs}</td></tr>`}).join('');
+$('#swing').innerHTML='<table><thead><tr><th>Ativo</th><th>Filtro semanal</th><th>EMA 9 / SMA 50</th><th>ATR(14)</th><th>Sinal e antecedência</th></tr></thead><tbody>'+R+'</tbody></table>';
+$('#pos').innerHTML=POS.length?'<table><thead><tr><th>Ativo</th><th>Compra</th><th>Stop</th><th>Tempo</th><th>Resultado</th><th>Situação</th><th></th></tr></thead><tbody>'+POS.map(posrow).join('')+'</tbody></table>':'<span class="mut">Nenhuma posição registrada.</span>';
+document.querySelectorAll('#pos button').forEach(b=>b.onclick=()=>{POS.splice(+b.dataset.r,1);savePos();swing()})}
+function swinit(){$('#st').innerHTML=SW.map(t=>`<option>${t}</option>`).join('');$('#sd').value=new Date().toISOString().slice(0,10);
+try{const c=localStorage.getItem('swingTrade.capital.v1');if(c)$('#cap').value=c}catch(e){}
+$('#cap').onchange=()=>{try{localStorage.setItem('swingTrade.capital.v1',$('#cap').value)}catch(e){}swing()};
+$('#sa').onclick=()=>{const p={t:$('#st').value,d:$('#sd').value,p:+$('#sp').value,q:+$('#sq').value};if(!p.d||!(p.p>0)||!(p.q>0))return;POS.push(p);savePos();swing()}}
+
+function add(t,rows,{persist=true}={}){const mp=new Map((S[t]||[]).map(r=>[r[0],r]));let changed=false;rows.forEach(r=>{const old=mp.get(r[0]);if(!old||old.some((v,i)=>v!==r[i])){mp.set(r[0],r);changed=true}});if(changed){S[t]=[...mp.values()].sort((a,b)=>a[0]<b[0]?-1:1);if(persist)save()}return changed}
+function status(text){$('#auto').textContent=text}
+function paintChips(){ $('#chips').textContent='Ativos: '+SW.map(t=>`${t} (${S[t]?.length?fd(S[t][S[t].length-1][0]):'sem dados'})`).join(' · ')}
+async function auto(){
+ const btn=$('#upd');btn.disabled=true;status('Buscando cotações mais recentes…');
+ try{
+  const response=await fetch('./data/market-data.json?ts='+Date.now(),{cache:'no-store'});
+  if(!response.ok)throw new Error('HTTP '+response.status);
+  const data=await response.json();if(!data||typeof data.assets!=='object')throw new Error('Formato de dados inválido');
+  let changed=0;for(const [ticker,rows] of Object.entries(data.assets)){if(Array.isArray(rows)&&SW.includes(ticker)&&add(ticker,rows,{persist:false}))changed++}
+  save();paintChips();swing();
+  const stamp=data.updated_at?new Date(data.updated_at).toLocaleString('pt-BR',{timeZone:'America/Recife'}):'sem registro';
+  const run=data.last_run? ` · ${data.last_run.successes}/${data.last_run.requested} consultas bem-sucedidas`:'';
+  const failed=Object.entries(data.asset_status||{}).filter(([,v])=>v.status==='error').map(([k])=>k);
+  status(`Dados publicados: ${stamp}${run}. ${changed?'Há candles novos ou revisados.':'Histórico já carregado.'}${failed.length?' Falhas: '+failed.join(', ')+'.':''}`);
+ }catch(e){status('Não foi possível carregar o arquivo remoto; histórico local preservado. '+e.message)}
+ finally{btn.disabled=false}
+}
+async function init(){
+ try{
+  const response=await fetch('./data/seed.json?ts='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);
+  SEED=await response.json();S=JSON.parse(JSON.stringify(SEED));
+  for(const k in SEED)SD[k]=new Set(SEED[k].map(r=>r[0]));
+  try{const local=JSON.parse(localStorage.getItem(CSV_KEY)||'{}');for(const k in local){const mp=new Map((S[k]||[]).map(r=>[r[0],r]));(local[k]||[]).forEach(r=>{if(!mp.has(r[0]))mp.set(r[0],r)});S[k]=[...mp.values()].sort((a,b)=>a[0]<b[0]?-1:1)}}catch(e){}
+  swinit();paintChips();swing();await auto();
+ }catch(e){status('Falha ao carregar histórico base: '+e.message)}
+}
+$('#f').onchange=async e=>{for(const file of e.target.files){const name=file.name.toUpperCase();const ticker=SW.find(t=>name.startsWith(t));if(!ticker)continue;const rows=parse(await file.text());add(ticker,rows)}paintChips();swing()};
+$('#clr').onclick=()=>{S=JSON.parse(JSON.stringify(SEED));try{localStorage.removeItem(CSV_KEY)}catch(e){}paintChips();swing()};
+$('#upd').onclick=()=>auto();
+init();
+</script>
+</body>
+</html>

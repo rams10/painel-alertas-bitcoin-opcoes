@@ -4,6 +4,15 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "index.html"
+      - "scripts/update_market_data.py"
+      - "scripts/update_swing_market_data.py"
+      - "swing/index.html"
+      - "swing/data/seed.json"
+      - "swing/data/market-data.json"
+      - ".github/workflows/update-and-deploy.yml"
+      - ".github/workflows/update-swing.yml"
   schedule:
     # Bitcoin: 21h15 no horário de Recife.
     - cron: "15 21 * * *"

@@ -24,7 +24,9 @@ Aplicativo independente para acompanhar os guias de Bitcoin e os sinais de venda
 
 ## Chaves da Alpha Vantage
 
-No GitHub, abra **Settings → Secrets and variables → Actions**. Mantenha `ALPHA_VANTAGE_API_KEY` para opções/Bitcoin. Para isolar swing trade, crie também `ALPHA_VANTAGE_SWING_API_KEY` com uma segunda chave da Alpha Vantage. Nunca coloque a chave em arquivos ou no HTML.
+No GitHub, abra **Settings → Secrets and variables → Actions**. Mantenha `ALPHA_VANTAGE_API_KEY` para opções/Bitcoin. Para separar a credencial do swing trade, crie também `ALPHA_VANTAGE_SWING_API_KEY` com a nova chave e salve diretamente como Secret. Enquanto esse segundo secret não existir, o atualizador de swing usa a chave principal como fallback. Nunca coloque as chaves em arquivos ou no HTML.
+
+O fluxo faz até 12 chamadas/dia para Bitcoin e opções (11 ações + 1 Bitcoin nos dias úteis, 1 para Bitcoin no fim de semana) e até 11 chamadas/dia para swing trade. Se ambos usarem a mesma chave, são até 23 chamadas nos dias úteis. A Alpha Vantage informa limite padrão de 25 requisições/dia para o serviço gratuito; portanto, a margem com uma única chave é pequena. A página pública do provedor não esclarece se duas chaves emitidas na mesma conta recebem cotas independentes; a segunda chave separa as credenciais no código, mas confirme com o provedor a separação efetiva de cota.
 
 ## Publicação
 

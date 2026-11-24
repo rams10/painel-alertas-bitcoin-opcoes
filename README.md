@@ -1,29 +1,39 @@
-# Painel de alertas — Bitcoin, opções e swing trade
+# Painel de Bitcoin e opções
 
-Painel estático publicado pelo GitHub Pages. Os cálculos e sinais continuam no navegador; as cotações OHLC são atualizadas pelo GitHub Actions e publicadas em `data/market-data.json`.
+Aplicativo independente para acompanhar os guias de Bitcoin e os sinais de venda de puts e calls em ações. O programa de swing trade agora tem página, histórico, rotina e chave de API separados em `/swing/`.
 
-## Atualização de cotações
+## Programa de Bitcoin e opções
 
-- Ações B3: dias úteis, às 21h40 (horário de Brasília).
-- Bitcoin: diariamente, às 21h15 (horário de Brasília), após a virada UTC usada pela série diária da Alpha Vantage.
-- As ações são consultadas pelo formato `TICKER.SA`.
-- Cada resposta traz a janela compacta mais recente; o script mescla datas novas e revisa candles repetidos sem apagar o histórico já acumulado.
-- Falhas individuais ficam registradas em `asset_status`; dados anteriores são mantidos.
+- Interface: `index.html`.
+- Dados exclusivos: `data/market-data.json`.
+- Atualizador: `scripts/update_market_data.py`.
+- Universo de ações para opções: SBSP3, BBSE3, ISAE4, EGIE3, PETR4, VALE3, BBAS3, BBDC4, ITUB4, ITSA4, AXIA3.
+- Bitcoin é consultado separadamente pela série diária digital.
+- Secret do GitHub: `ALPHA_VANTAGE_API_KEY`.
+- Coletas: Bitcoin diariamente às 21h15 e ações em dias úteis às 21h40 (horário de Recife).
 
-## Configuração inicial
+## Programa independente de swing trade
 
-1. Solicite uma chave pessoal da Alpha Vantage em https://www.alphavantage.co/support/#api-key.
-2. No repositório, abra **Settings → Secrets and variables → Actions → New repository secret**.
-3. Nome do secret: `ALPHA_VANTAGE_API_KEY`. Valor: sua chave. Não coloque a chave em arquivos do repositório nem no HTML.
-4. Em **Settings → Pages**, selecione **GitHub Actions** como fonte de publicação.
-5. Em **Actions**, execute **Atualizar dados e publicar painel** com `all` para testar as consultas e publicar os primeiros dados.
+- Painel: `swing/index.html`.
+- Histórico base local do app: `swing/data/seed.json`.
+- Cache de mercado: `swing/data/market-data.json`.
+- Atualizador separado: `scripts/update_swing_market_data.py`.
+- Universo: WEGE3, SUZB3, ITUB4, B3SA3, AXIA3, VALE3, PRIO3, BPAC11, PETR4, GGBR4, BBAS3.
+- Secret dedicado recomendado: `ALPHA_VANTAGE_SWING_API_KEY`. Enquanto ele não for criado, o fluxo usa a chave principal como fallback; criar o segundo secret mantém cotas e falhas isoladas.
+- Coleta automática em dias úteis às 22h00 (horário de Recife), após o programa de opções.
 
-O fluxo automático usa até 17 consultas por dia útil para as ações e uma consulta diária para o Bitcoin (18 no total em dias úteis), dentro da franquia padrão documentada de 25 requisições/dia. A Alpha Vantage pode alterar limites e disponibilidade por símbolo.
+## Chaves da Alpha Vantage
+
+No GitHub, abra **Settings → Secrets and variables → Actions**. Mantenha `ALPHA_VANTAGE_API_KEY` para opções/Bitcoin. Para isolar swing trade, crie também `ALPHA_VANTAGE_SWING_API_KEY` com uma segunda chave da Alpha Vantage. Nunca coloque a chave em arquivos ou no HTML.
+
+## Publicação
+
+O GitHub Pages publica os dois programas no mesmo domínio, mas com arquivos, caches, atualizadores e segredos independentes. O deploy é serializado para não disputar a publicação do site.
 
 ## Observações
 
-- A Alpha Vantage `TIME_SERIES_DAILY` retorna OHLC diário bruto (não ajustado por dividendos/desdobramentos). Isso preserva a mesma família de dados usada originalmente pelo painel.
-- O histórico inicial embutido no `index.html` é mantido. O arquivo remoto complementa esse histórico com candles recentes.
-- O histórico local importado por CSV e as posições de swing ficam no `localStorage` do navegador; não são sincronizados entre dispositivos.
-- O site e seus arquivos serão públicos porque este repositório usa GitHub Pages gratuito.
-- Material de apoio pessoal; não constitui recomendação de investimento.
+- Ações usam `TIME_SERIES_DAILY` para tickers no formato `.SA` e candles OHLC não ajustados.
+- As rotinas guardam os candles anteriores e mesclam/revisam datas repetidas.
+- O histórico importado por CSV e as posições de swing ficam somente no navegador.
+- O site e seus arquivos são públicos por usar GitHub Pages.
+- Material de apoio pessoal, não recomendação de investimento.

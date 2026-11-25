@@ -17,8 +17,8 @@ on:
     # Bitcoin: 21h15 no horário de Recife.
     - cron: "15 21 * * *"
       timezone: "America/Recife"
-    # Ações B3 do programa de opções: 21h40 em dias úteis.
-    - cron: "40 21 * * 1-5"
+    # Ações B3 do programa de opções: 18h30, 30 minutos após o fechamento.
+    - cron: "30 18 * * 1-5"
       timezone: "America/Recife"
   workflow_dispatch:
     inputs:
@@ -37,6 +37,11 @@ permissions:
   pages: write
   id-token: write
   actions: read
+
+# Serializa gravações de dados com o fluxo de swing trade no mesmo repositório.
+concurrency:
+  group: market-data-repository-updates
+  cancel-in-progress: false
 
 jobs:
   update:

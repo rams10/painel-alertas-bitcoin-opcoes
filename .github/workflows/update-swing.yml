@@ -2,13 +2,15 @@ name: Atualizar swing trade
 
 on:
   schedule:
-    # Swing trade: 22h00 no horário de Recife, dias úteis.
-    - cron: "0 22 * * 1-5"
+    # Swing trade após o fechamento da B3, evitando o minuto cheio.
+    - cron: "17 22 * * 1-5"
       timezone: "America/Recife"
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: swing-trade-data
@@ -42,4 +44,47 @@ jobs:
             git push
           else
             echo "Nenhuma alteração nos dados do swing trade."
-          fi
+          fi  
+  deploy:
+    needs: update
+    if: always() && (needs.update.result == 'success' || needs.update.result == 'skipped')
+    concurrency:
+      group: github-pages-deployment
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Baixar a versão atualizada do repositório
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Preparar arquivos do site
+        run: |
+          mkdir -p _site/data
+          cp index.html _site/index.html
+          cp data/market-data.json _site/data/market-data.json
+          mkdir -p _site/swing
+          cp -R swing/. _site/swing/
+
+      - name: Enviar artefato do site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          name: github-pages-swing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: _site
+
+      - name: Aguardar indexação do artefato
+        run: sleep 10
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-swing-${{ github.run_id }}-${{ github.run_attempt }}

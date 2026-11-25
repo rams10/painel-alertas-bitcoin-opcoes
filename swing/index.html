@@ -16,7 +16,16 @@ input[type=number]{width:120px}button{cursor:pointer}button:disabled{opacity:.5;
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
 .tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;background:var(--bd)}.ok{background:var(--okb);color:var(--ok)}.wn{background:var(--wnb);color:var(--wn)}.dn{background:var(--dnb);color:var(--dn)}
 .tw{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:800px}th,td{text-align:left;padding:10px 9px;border-bottom:1px solid var(--bd);vertical-align:top;font-size:13px}th{color:var(--mut);font-weight:650}td.n{text-align:right;font-variant-numeric:tabular-nums}
-.status{font-size:13px;color:var(--mut);overflow-wrap:anywhere}.foot{margin-top:20px;font-size:12px;color:var(--mut);line-height:1.6}
+.status{font-size:13px;color:var(--mut);overflow-wrap:anywhere}
+.alerts{display:grid;gap:9px;margin-top:10px}
+.alert-card{background:#0d1728;border:1px solid var(--bd);border-left:4px solid var(--mut);border-radius:10px;padding:12px 14px}
+.alert-card.high{border-left-color:var(--dn)}
+.alert-card.medium{border-left-color:var(--wn)}
+.alert-card.info{border-left-color:var(--ok)}
+.alert-title{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:750}
+.alert-detail{font-size:13px;color:var(--mut);margin-top:5px}
+.alert-meta{font-size:12px;color:var(--mut);margin-bottom:10px}
+.foot{margin-top:20px;font-size:12px;color:var(--mut);line-height:1.6}
 @media(max-width:650px){main{padding:20px 12px 36px}.box{padding:13px}}
 </style>
 </head>
@@ -31,6 +40,10 @@ input[type=number]{width:120px}button{cursor:pointer}button:disabled{opacity:.5;
  <div class="row"><input id="f" type="file" accept=".csv" multiple><button id="clr">Restaurar histórico base</button><button id="upd">Recarregar cotações publicadas</button></div>
  <p id="chips" class="status">Carregando histórico inicial…</p>
  <p id="auto" class="status">Consultando dados publicados…</p>
+</div>
+<h2>Painel de avisos</h2>
+<div class="box" id="alerts" aria-live="polite">
+ <p class="mut">Calculando avisos a partir dos candles e das regras do Swing Trade…</p>
 </div>
 <h2>Sinais de swing trade</h2>
 <div class="box">
@@ -75,7 +88,8 @@ const tg=(t,c='')=>`<span class="tag ${c}">${t}</span>`;
 let S={},SEED={},SD={};
 const CSV_KEY='swingTrade.csv.v1';
 const save=()=>{try{const o={};for(const k in S)o[k]=S[k].filter(r=>!(SD[k]&&SD[k].has(r[0])));localStorage.setItem(CSV_KEY,JSON.stringify(o))}catch(e){}};
-const SW=['WEGE3','SUZB3','ITUB4','B3SA3','AXIA3','VALE3','PRIO3','BPAC11','PETR4','GGBR4','BBAS3'],ALL=[...new Set([...CFG.map(c=>c[0]),...SW])];
+const SW=['WEGE3','SUZB3','ITUB4','B3SA3','AXIA3','VALE3','PRIO3','BPAC11','PETR4','GGBR4','BBAS3'];
+let MARKET_META={updatedAt:null,successes:null,requested:null,failures:[]};
 let POS=[];try{POS=JSON.parse(localStorage.getItem('swingTrade.positions.v1')||'[]')}catch(e){}
 const savePos=()=>{try{localStorage.setItem('swingTrade.positions.v1',JSON.stringify(POS))}catch(e){}};
 function swind(rows){const n=rows.length,c=rows.map(r=>r[4]),h=rows.map(r=>r[2]),l=rows.map(r=>r[3]),atr=[];
@@ -111,7 +125,61 @@ else cs=`<span class="mut">sem sinal${last?' · último: '+fd(last):''}</span>`+
 return `<tr><td><b>${t}</b><br><span class="mut">R$ ${f2(c,2)} · ${fd(rows[n][0])}</span></td><td>${tg(fl?'ligado':'desligado',fl?'ok':'')}<br><span class="mut">linha semanal R$ ${f2(x.wb[n],2)}</span></td><td>${tg(up?'EMA9 acima':'EMA9 abaixo',up?'ok':'')}<br><span class="mut">${f2(x.e9[n],2)} / ${f2(x.s50[n],2)}</span></td><td class="n">R$ ${f2(a,2)}<br><span class="mut">${f2(a/c*100)}% do preço</span></td><td>${cs}</td></tr>`}).join('');
 $('#swing').innerHTML='<table><thead><tr><th>Ativo</th><th>Filtro semanal</th><th>EMA 9 / SMA 50</th><th>ATR(14)</th><th>Sinal e antecedência</th></tr></thead><tbody>'+R+'</tbody></table>';
 $('#pos').innerHTML=POS.length?'<table><thead><tr><th>Ativo</th><th>Compra</th><th>Stop</th><th>Tempo</th><th>Resultado</th><th>Situação</th><th></th></tr></thead><tbody>'+POS.map(posrow).join('')+'</tbody></table>':'<span class="mut">Nenhuma posição registrada.</span>';
-document.querySelectorAll('#pos button').forEach(b=>b.onclick=()=>{POS.splice(+b.dataset.r,1);savePos();swing()})}
+document.querySelectorAll('#pos button').forEach(b=>b.onclick=()=>{POS.splice(+b.dataset.r,1);savePos();swing()});renderAlerts()}
+function renderAlerts(){
+ const root=$('#alerts');if(!root)return;
+ const items=[];
+ const push=(level,ticker,title,detail,date)=>items.push({level,ticker,title,detail,date});
+ for(const t of SW){
+  const rows=S[t];if(!rows||rows.length<130)continue;
+  const x=swind(rows),n=rows.length-1,c=x.c[n],e=x.e9[n],m=x.s50[n];
+  const weekly=Number.isFinite(x.wb[n])&&c>x.wb[n],up=e>m,day=fd(rows[n][0]);
+  const cross=weekly&&up&&x.e9[n-1]<=x.s50[n-1];
+  if(cross){
+   push('high',t,'Sinal de entrada confirmado','EMA 9 cruzou acima da SMA 50 com filtro semanal ligado. Regra do painel: avaliar entrada na abertura seguinte; conferir preço, liquidez e stop de 3 ATR.',day);
+  }else if(weekly&&!up){
+   const weeklyLine=dow(rows[n][0])===5?x.wl:x.wb[n];
+   const need=Math.max((m-0.8*e-x.c[n-49]/50)/0.18,weeklyLine);
+   if(Number.isFinite(need)&&need<=c*1.03){
+    push('medium',t,'Quase sinal de entrada','O filtro semanal está ligado. Para confirmar o cruzamento, o fechamento precisa superar aproximadamente R$ '+f2(need,2)+'. Ainda não é sinal de compra.',day);
+   }else if(Number.isFinite(e)&&e>0&&(m/e-1)<=0.025){
+    push('medium',t,'EMA 9 próxima da SMA 50','As médias estão próximas, mas o cruzamento ainda não ocorreu. Aguardar confirmação no fechamento e manter o filtro semanal.',day);
+   }
+  }
+ }
+ for(let j=0;j<POS.length;j++){
+  const p=POS[j],rows=S[p.t];
+  if(!rows||!rows.length){push('info',p.t,'Posição sem histórico disponível','A posição registrada em '+fd(p.d)+' ainda não tem candles carregados para acompanhamento.','');continue;}
+  const start=rows.findIndex(r=>r[0]>=p.d);
+  if(start<0){push('info',p.t,'Aguardando histórico da posição','Não há candle carregado a partir da data de compra '+fd(p.d)+'.','');continue;}
+  const x=swind(rows),n=rows.length-1,stop=p.p-3*x.atr[Math.max(start-1,0)];
+  let reason='',reasonDay='';
+  for(let i=start;i<=n&&!reason;i++){
+   const k=i-start+1;
+   if(x.l[i]<=stop)reason='stop inicial de 3 ATR atingido';
+   else if(x.e9[i]<x.s50[i])reason='EMA 9 fechou abaixo da SMA 50';
+   else if(x.c[i]<x.wb[i])reason='fechamento abaixo da linha semanal';
+   else if(k===10&&x.c[i]<p.p)reason='10º pregão fechou abaixo do preço de compra';
+   else if(k>=21)reason='prazo máximo da operação atingido';
+   if(reason)reasonDay=rows[i][0];
+  }
+  const k=n-start+1,c=x.c[n],e=x.e9[n],m=x.s50[n],weekly=dow(rows[n][0])===5?x.wl:x.wb[n];
+  if(reason){
+   push('high',p.t,'Regra de saída acionada',reason+'. Regra do painel: avaliar venda na próxima abertura e cancelar a ordem stop após a execução.',fd(reasonDay));
+  }else{
+   if(k===9&&c>=p.p)push('medium',p.t,'10º pregão amanhã','Amanhã será o 10º pregão da posição. Pela regra, sair se o fechamento ficar abaixo do preço de compra (R$ '+f2(p.p,2)+').',fd(rows[n][0]));
+   if(k===20)push('medium',p.t,'Prazo máximo amanhã','Amanhã será o 21º pregão da posição, limite temporal previsto no checklist.',fd(rows[n][0]));
+   if(e>m&&e/m-1<=0.025)push('medium',p.t,'Atenção à média de curto prazo','EMA 9 está próxima da SMA 50. Pela regra, fechamento da EMA 9 abaixo da SMA 50 aciona saída.',fd(rows[n][0]));
+   if(Number.isFinite(weekly)&&weekly>0&&c>=weekly&&c/weekly-1<=0.025)push('medium',p.t,'Preço próximo da linha semanal','Fechamento está a até 2,5% da média semanal (R$ '+f2(weekly,2)+'). Monitorar a confirmação no fechamento.',fd(rows[n][0]));
+  }
+ }
+ const rank={high:0,medium:1,info:2};
+ items.sort((a,b)=>rank[a.level]-rank[b.level]);
+ const badge={high:'AÇÃO',medium:'ATENÇÃO',info:'INFO'};
+ const cards=items.length?items.map(a=>'<article class="alert-card '+a.level+'"><div class="alert-title"><span>'+a.ticker+' · '+a.title+'</span><span class="tag '+(a.level==='high'?'dn':a.level==='medium'?'wn':'ok')+'">'+badge[a.level]+'</span></div><div class="alert-detail">'+a.detail+(a.date?' · Candle: '+a.date:'')+'</div></article>').join(''):'<article class="alert-card info"><div class="alert-title"><span>Nenhum aviso operacional no momento</span><span class="tag ok">NORMAL</span></div><div class="alert-detail">As regras atuais não identificaram sinal de entrada, aproximação relevante ou condição de saída nas posições cadastradas. Isso não substitui a conferência dos candles e das ordens na corretora.</div></article>';
+ const meta=MARKET_META.updatedAt?'Última coleta publicada: '+new Date(MARKET_META.updatedAt).toLocaleString('pt-BR',{timeZone:'America/Recife'})+(Number.isFinite(MARKET_META.successes)?' · '+MARKET_META.successes+'/'+MARKET_META.requested+' consultas bem-sucedidas':'')+(MARKET_META.failures.length?' · Falhas: '+MARKET_META.failures.join(', '):'')+'.':'Status da coleta publicada ainda não carregado; os avisos usam o histórico disponível neste navegador.';
+ root.innerHTML='<div class="alert-meta">'+meta+'</div><div class="alerts">'+cards+'</div>';
+}
 function swinit(){$('#st').innerHTML=SW.map(t=>`<option>${t}</option>`).join('');$('#sd').value=new Date().toISOString().slice(0,10);
 try{const c=localStorage.getItem('swingTrade.capital.v1');if(c)$('#cap').value=c}catch(e){}
 $('#cap').onchange=()=>{try{localStorage.setItem('swingTrade.capital.v1',$('#cap').value)}catch(e){}swing()};
@@ -131,6 +199,8 @@ async function auto(){
   const stamp=data.updated_at?new Date(data.updated_at).toLocaleString('pt-BR',{timeZone:'America/Recife'}):'sem registro';
   const run=data.last_run? ` · ${data.last_run.successes}/${data.last_run.requested} consultas bem-sucedidas`:'';
   const failed=Object.entries(data.asset_status||{}).filter(([,v])=>v.status==='error').map(([k])=>k);
+  MARKET_META={updatedAt:data.updated_at||null,successes:data.last_run?.successes??null,requested:data.last_run?.requested??null,failures:failed};
+  renderAlerts();
   status(`Dados publicados: ${stamp}${run}. ${changed?'Há candles novos ou revisados.':'Histórico já carregado.'}${failed.length?' Falhas: '+failed.join(', ')+'.':''}`);
  }catch(e){status('Não foi possível carregar o arquivo remoto; histórico local preservado. '+e.message)}
  finally{btn.disabled=false}

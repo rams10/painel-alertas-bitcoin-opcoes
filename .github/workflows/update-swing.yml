@@ -2,8 +2,8 @@ name: Atualizar swing trade
 
 on:
   schedule:
-    # Swing trade após o fechamento da B3, evitando o minuto cheio.
-    - cron: "17 22 * * 1-5"
+    # Swing trade às 18h40: 40 minutos após o fechamento e 10 min após opções.
+    - cron: "40 18 * * 1-5"
       timezone: "America/Recife"
   workflow_dispatch:
 
@@ -13,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: swing-trade-data
+  group: market-data-repository-updates
   cancel-in-progress: false
 
 jobs:
